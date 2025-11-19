@@ -1,0 +1,18 @@
+[project]
+name = "lerobot-cleank"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ipykernel>=7.1.0",
+    "keyboard>=0.13.5",
+    "lerobot @ git+https://github.com/UedaKenji/lerobot.git@feature/CleanK",
+    "numpy>=2.2.6",
+    "pyrealsense2>=2.56.5.9235",
+    "scipy>=1.15.3",
+]
+
+
+[tool.uv.sources]
+lerobot = { path = "../lerobot", editable = true }
