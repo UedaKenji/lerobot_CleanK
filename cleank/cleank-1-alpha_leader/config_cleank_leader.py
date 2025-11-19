@@ -14,5 +14,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .config_cleank_leader import CleankLeaderConfig
-from .cleank_leader import CleankLeader
+from dataclasses import dataclass
+
+from lerobot.teleoperators import TeleoperatorConfig
+from ..damiao.damiao import MotorNormMode
+from ..damiao.DM_CAN import Control_Type
+
+
+@TeleoperatorConfig.register_subclass("cleank_leader")
+@dataclass
+class CleankLeaderConfig(TeleoperatorConfig):
+    """Static configuration for the CleanK leader teleoperator (ports, control mode)."""
+
+    port: str
+    disable_torque_on_disconnect: bool = True
+    control_type: Control_Type = Control_Type.MIT
+    motor_norm_mode: MotorNormMode = MotorNormMode.CENTERING

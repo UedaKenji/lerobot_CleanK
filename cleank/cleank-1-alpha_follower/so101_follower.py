@@ -20,62 +20,55 @@ from functools import cached_property
 from typing import Any
 
 from lerobot.cameras.utils import make_cameras_from_configs
-
-from ..damiao.DM_CAN import DM_Motor_Type, Motor
-from ..damiao.damiao import DamiaoMotorsBus, MotorCalibration, MotorNormMode
-
+from lerobot.motors import Motor, MotorCalibration, MotorNormMode
+from lerobot.motors.feetech import (
+    FeetechMotorsBus,
+    OperatingMode,
+)
 from lerobot.utils.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
-from lerobot.robots import Robot
-from lerobot.robots.utils import ensure_safe_goal_position
-from .config_cleank_follower import CleankFollowerConfig
+from ..robot import Robot
+from ..utils import ensure_safe_goal_position
+from .config_so101_follower import SO101FollowerConfig
 
 logger = logging.getLogger(__name__)
 
 
-class CleanKFollower(Robot):
-    """Robot wrapper around the Damiao-powered CleanK follower arm."""
+class SO101Follower(Robot):
+    """
+    SO-101 Follower Arm designed by TheRobotStudio and Hugging Face.
+    """
 
-    config_class = CleankFollowerConfig
-    name = "clean_k_follower"
+    config_class = SO101FollowerConfig
+    name = "so101_follower"
 
-    def __init__(self, config: CleankFollowerConfig):
+    def __init__(self, config: SO101FollowerConfig):
         super().__init__(config)
         self.config = config
-        motor_norm_mode = config.motor_norm_mode
-        control_type = config.control_type
-        self.bus = DamiaoMotorsBus(
+        norm_mode_body = MotorNormMode.DEGREES if config.use_degrees else MotorNormMode.RANGE_M100_100
+        self.bus = FeetechMotorsBus(
             port=self.config.port,
             motors={
-                "shoulder_pan" : Motor(DM_Motor_Type.DM6006,0x01,0x15),
-                "shoulder_lift": Motor(DM_Motor_Type.DM6006,0x02,0x15),
-                "shoulder_roll": Motor(DM_Motor_Type.DM4310,0x03,0x15),
-                "elbow_flex"   : Motor(DM_Motor_Type.DM4310,0x04,0x15),
-                "wrist_roll"   : Motor(DM_Motor_Type.DM4310,0x05,0x15),
+                "shoulder_pan": Motor(1, "sts3215", norm_mode_body),
+                "shoulder_lift": Motor(2, "sts3215", norm_mode_body),
+                "elbow_flex": Motor(3, "sts3215", norm_mode_body),
+                "wrist_flex": Motor(4, "sts3215", norm_mode_body),
+                "wrist_roll": Motor(5, "sts3215", norm_mode_body),
+                "gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
             },
             calibration=self.calibration,
-            motor_norm_mode=motor_norm_mode,
-            control_type=control_type,
         )
         self.cameras = make_cameras_from_configs(config.cameras)
 
     @property
     def _motors_ft(self) -> dict[str, type]:
-        res = {}
-        res.update({f"{motor}.pos": float for motor in self.bus.motor_names})
-        res.update({f"{motor}.vel": float for motor in self.bus.motor_names})
-        res.update({f"{motor}.tor": float for motor in self.bus.motor_names})
-        return res
+        return {f"{motor}.pos": float for motor in self.bus.motors}
 
     @property
     def _cameras_ft(self) -> dict[str, tuple]:
         return {
             cam: (self.config.cameras[cam].height, self.config.cameras[cam].width, 3) for cam in self.cameras
         }
-    
-    @property
-    def _motors_ft2(self) -> dict[str, type]:
-        return {f"{motor}.pos": float for motor in self.bus.motor_names}
 
     @cached_property
     def observation_features(self) -> dict[str, type | tuple]:
@@ -83,18 +76,16 @@ class CleanKFollower(Robot):
 
     @cached_property
     def action_features(self) -> dict[str, type]:
-        return self._motors_ft2
+        return self._motors_ft
 
     @property
     def is_connected(self) -> bool:
         return self.bus.is_connected and all(cam.is_connected for cam in self.cameras.values())
 
     def connect(self, calibrate: bool = True) -> None:
-        """Open the motor bus and cameras, optionally running calibration.
-
-        Args:
-            calibrate (bool, optional): When `True` (default) run the interactive calibration
-                helper if cached values do not match the motors.
+        """
+        We assume that at connection time, arm is in a rest position,
+        and torque can be safely disabled to run calibration.
         """
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{self} already connected")
@@ -117,7 +108,6 @@ class CleanKFollower(Robot):
         return self.bus.is_calibrated
 
     def calibrate(self) -> None:
-        """Interactively record offsets/ranges of motion and persist them."""
         if self.calibration:
             # self.calibration is not empty here
             user_input = input(
@@ -129,23 +119,25 @@ class CleanKFollower(Robot):
                 return
 
         logger.info(f"\nRunning calibration of {self}")
+        self.bus.disable_torque()
+        for motor in self.bus.motors:
+            self.bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
 
-        with self.bus.torque_disabled():
+        input(f"Move {self} to the middle of its range of motion and press ENTER....")
+        homing_offsets = self.bus.set_half_turn_homings()
 
-            input(f"Move {self} to the middle of its range of motion and press ENTER....")
-            homing_offsets = self.bus.reset_offset()
-
-            print(
-                "Move all joints sequentially through their entire ranges "
-                "of motion.\nRecording positions. Press ENTER to stop..."
-            )
-            range_mins, range_maxes = self.bus.record_ranges_of_motion()
+        print(
+            "Move all joints sequentially through their entire ranges "
+            "of motion.\nRecording positions. Press ENTER to stop..."
+        )
+        range_mins, range_maxes = self.bus.record_ranges_of_motion()
 
         self.calibration = {}
         for motor, m in self.bus.motors.items():
             self.calibration[motor] = MotorCalibration(
-                id=m.SlaveID,
-                motor_offset=homing_offsets[motor],
+                id=m.id,
+                drive_mode=0,
+                homing_offset=homing_offsets[motor],
                 range_min=range_mins[motor],
                 range_max=range_maxes[motor],
             )
@@ -155,18 +147,37 @@ class CleanKFollower(Robot):
         print("Calibration saved to", self.calibration_fpath)
 
     def configure(self) -> None:
-        """Apply post-connection tweaks (no-op for now)."""
-        pass 
+        with self.bus.torque_disabled():
+            self.bus.configure_motors()
+            for motor in self.bus.motors:
+                self.bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
+                # Set P_Coefficient to lower value to avoid shakiness (Default is 32)
+                self.bus.write("P_Coefficient", motor, 16)
+                # Set I_Coefficient and D_Coefficient to default value 0 and 32
+                self.bus.write("I_Coefficient", motor, 0)
+                self.bus.write("D_Coefficient", motor, 32)
+
+                if motor == "gripper":
+                    self.bus.write(
+                        "Max_Torque_Limit", motor, 500
+                    )  # 50% of the max torque limit to avoid burnout
+                    self.bus.write("Protection_Current", motor, 250)  # 50% of max current to avoid burnout
+                    self.bus.write("Overload_Torque", motor, 25)  # 25% torque when overloaded
+
+    def setup_motors(self) -> None:
+        for motor in reversed(self.bus.motors):
+            input(f"Connect the controller board to the '{motor}' motor only and press enter.")
+            self.bus.setup_motor(motor)
+            print(f"'{motor}' motor id set to {self.bus.motors[motor].id}")
 
     def get_observation(self) -> dict[str, Any]:
-        """Return the latest motor state and camera frames."""
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
         # Read arm position
         start = time.perf_counter()
-        motor_state = self.bus.sync_read()
-        obs_dict = motor_state.copy()
+        obs_dict = self.bus.sync_read("Present_Position")
+        obs_dict = {f"{motor}.pos": val for motor, val in obs_dict.items()}
         dt_ms = (time.perf_counter() - start) * 1e3
         logger.debug(f"{self} read state: {dt_ms:.1f}ms")
 
@@ -180,7 +191,7 @@ class CleanKFollower(Robot):
         return obs_dict
 
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
-        """Command the arm to move to a target joint configuration.
+        """Command arm to move to a target joint configuration.
 
         The relative action magnitude may be clipped depending on the configuration parameter
         `max_relative_target`. In this case, the action sent differs from original action.
@@ -190,33 +201,25 @@ class CleanKFollower(Robot):
             RobotDeviceNotConnectedError: if robot is not connected.
 
         Returns:
-            dict[str, Any]: Mapping ``<motor>.<pos|vel|tor>`` describing the actual command
-            that was sent after clipping.
+            the action sent to the motors, potentially clipped.
         """
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
-        goal_positions = {key.removesuffix(".pos"): val for key, val in action.items() if key.endswith(".pos")}
+        goal_pos = {key.removesuffix(".pos"): val for key, val in action.items() if key.endswith(".pos")}
 
         # Cap goal position when too far away from present position.
         # /!\ Slower fps expected due to reading from the follower.
         if self.config.max_relative_target is not None:
-            present_pos = self.bus.sync_read()
-            goal_present_pos = {
-                motor: (g_pos, present_pos[f"{motor}.pos"]) for motor, g_pos in goal_positions.items()
-            }
-            goal_positions = ensure_safe_goal_position(goal_present_pos, self.config.max_relative_target)
-
-        command = action.copy()
-        for motor, val in goal_positions.items():
-            command[f"{motor}.pos"] = val
+            present_pos = self.bus.sync_read("Present_Position")
+            goal_present_pos = {key: (g_pos, present_pos[key]) for key, g_pos in goal_pos.items()}
+            goal_pos = ensure_safe_goal_position(goal_present_pos, self.config.max_relative_target)
 
         # Send goal position to the arm
-        self.bus.sync_write(command)
-        return command
+        self.bus.sync_write("Goal_Position", goal_pos)
+        return {f"{motor}.pos": val for motor, val in goal_pos.items()}
 
     def disconnect(self):
-        """Gracefully disconnect the robot and attached cameras."""
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 

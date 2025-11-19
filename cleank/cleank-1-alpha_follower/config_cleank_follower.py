@@ -19,15 +19,20 @@ from dataclasses import dataclass, field
 from lerobot.cameras import CameraConfig
 from lerobot.cameras.realsense import RealSenseCameraConfig
 from lerobot.robots import RobotConfig
+from ..damiao.damiao import MotorNormMode
+from ..damiao.DM_CAN import Control_Type
 
 
 @RobotConfig.register_subclass("cleank-1-alpha_follower")
 @dataclass
 class CleankFollowerConfig(RobotConfig):
+    """Static configuration for the CleanK follower arm (ports, safety bounds, cameras)."""
     # Port to connect to the arm
-    port: str
+    port: str 
 
-    disable_torque_on_disconnect: bool = True
+    disable_torque_on_disconnect: bool = False
+    control_type: Control_Type = Control_Type.MIT
+    motor_norm_mode: MotorNormMode = MotorNormMode.CENTERING
 
     # `max_relative_target` limits the magnitude of the relative positional target vector for safety purposes.
     # Set this to a positive scalar to have the same value for all motors, or a dictionary that maps motor
@@ -38,14 +43,11 @@ class CleankFollowerConfig(RobotConfig):
     cameras: dict[str, CameraConfig] = field(
         default_factory={
             "cam_1": RealSenseCameraConfig(
-                serial_number_or_name="hogehoge",
-                fps=15,
+                serial_number_or_name="850312071789",
+                fps=30,
                 width=640,
                 height=480,
-                use_depth=True,
+                use_depth=False,
             ),
         }
     )
-
-    # Set to `True` for backward compatibility with previous policies/dataset
-    use_degrees: bool = False

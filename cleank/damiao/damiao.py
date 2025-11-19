@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from typing import Dict, TypeAlias
 from serial import Serial
 from functools import cached_property
@@ -5,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pprint import pformat
 from copy import deepcopy
+from contextlib import contextmanager
 
 import logging
 import time
@@ -40,6 +42,7 @@ class MotorCalibration:
     range_max: float
 
 class DamiaoMotorsBus:
+    """CAN bus helper that talks to DaMiao actuators through the vendor SDK."""
     def __init__(
         self,
         port: str,
@@ -47,7 +50,7 @@ class DamiaoMotorsBus:
         baudrate: int = DEFAULT_BAUDRATE,
         control_type=Control_Type.MIT,
         calibration: dict[str, MotorCalibration] | None = None,
-        motor_norm_modes: dict[str, MotorNormMode] | None = None,
+        motor_norm_mode: MotorNormMode = MotorNormMode.RANGE_M100_100,
     ):
         self.port = port
         self.motors : Dict[str, Motor] = motors
@@ -56,15 +59,14 @@ class DamiaoMotorsBus:
         self.serial_device = Serial(port, baudrate)
         self._last_refresh_time: float | None = None #Track when motor telemetry was last refreshed so we can throttle polling
         self.calibration: dict[str, MotorCalibration] = calibration.copy() if calibration else {}
-        self.motor_norm_modes: dict[str, MotorNormMode] = motor_norm_modes.copy() if motor_norm_modes else {}
-        for motor_name in self.motors:
-            self.motor_norm_modes.setdefault(motor_name, MotorNormMode.RANGE_M100_100)
+        self.motor_norm_mode = motor_norm_mode
 
         self.motorcontrol = MotorControl(self.serial_device)
         self.motorcontrol.serial_.close()
         for motor in self.motors.values():
             self.motorcontrol.addMotor(motor)
             logger.debug(f"Added motor {motor} to DamiaoMotorsBus on port {self.port}")
+        self._has_calibration: bool = bool(self.calibration)
 
     def _get_motor_names(self,):
         return list(self.motors.keys())
@@ -74,7 +76,7 @@ class DamiaoMotorsBus:
         return self._get_motor_names()
 
     def connect(self):
-        
+        """Open the serial port and switch every attached motor to the chosen control mode."""
         if self.is_connected:
             raise DeviceAlreadyConnectedError(
                 f"{self.__class__.__name__}('{self.port}') is already connected. Do not call `{self.__class__.__name__}.connect()` twice."
@@ -97,7 +99,7 @@ class DamiaoMotorsBus:
     
     @property
     def is_calibrated(self) -> bool:
-        return self.calibrated()
+        return self._has_calibration and self.calibrated()
 
     def disconnect(self, disable_torque: bool = True) -> None:
         """Close the serial port (optionally disabling torque first).
@@ -113,18 +115,36 @@ class DamiaoMotorsBus:
             )
         
         if disable_torque:
-            for motor in self.motors.values():
-                self.motorcontrol.disable(motor)
+            self.disable_torque()
         self.motorcontrol.serial_.close()
         logger.debug(f"{self.__class__.__name__} disconnected.")
-    
 
-        
+    def disable_torque(self, motors: str | list[str] | None = None) -> None:
+        """Disable torque for the selected motors (defaults to all)."""
+        selected_motors = self._select_motors(motors)
+        for motor in selected_motors.values():
+            self.motorcontrol.disable(motor)
+
+    def enable_torque(self, motors: str | list[str] | None = None) -> None:
+        """Enable torque for the selected motors (defaults to all)."""
+        selected_motors = self._select_motors(motors)
+        for motor in selected_motors.values():
+            self.motorcontrol.enable(motor)
+    
+    @contextmanager
+    def torque_disabled(self, motors: str | list[str] | None = None):
+        """Context manager that temporarily disables torque on selected motors."""
+        self.disable_torque(motors)
+        try:
+            yield
+        finally:
+            self.enable_torque(motors)
+    
     
     def reset_offset(self,
         motors: str | list[str] | None = None
     ) -> dict[str, int]:
-        """Reset the homing offset of several motors to zero.
+        """Reset the homing offset of several motors to zero and return the written offsets.
 
         Args:
             motors (str | list[str] | None, optional): Motors to reset. Defaults to all motors (`None`).
@@ -152,16 +172,17 @@ class DamiaoMotorsBus:
         normalize: bool = True,
         num_retry: int = 0,
     ) -> dict[str, Value]:
-        """Read the same register from several motors at once.
+        """Return the latest position/velocity/torque values for the requested motors.
 
         Args:
-            data_name (str): Register name.
-            motors (str | list[str] | None, optional): Motors to query. `None` (default) reads every motor.
-            normalize (bool, optional): Normalisation flag.  Defaults to `True`.
-            num_retry (int, optional): Retry attempts.  Defaults to `0`.
+            motors (str | list[str] | None, optional): Selection of motors to query. `None`
+                loads every motor. Defaults to `None`.
+            normalize (bool, optional): If `True` (default) positions are expressed in the
+                configured :class:`MotorNormMode`. Set to `False` to obtain raw radians.
+            num_retry (int, optional): Reserved for future retries (unused for DaMiao).
 
         Returns:
-            dict[str, Value]: Mapping *motor name → value*.
+            dict[str, Value]: Flat mapping ``<motor>.<pos|vel|tor>`` to the latest readings.
         """
 
         selected_motors = self._select_motors(motors)
@@ -187,6 +208,8 @@ class DamiaoMotorsBus:
         position = {motor_name: motor.getPosition() for motor_name, motor in selected_motors.items()}
 
         if normalize:
+            if not self._has_calibration:
+                raise RuntimeError("Cannot normalize Damiao positions without calibration.")
             position = self.normalize_positions(position)
 
         res.update({f'{motor_name}.pos': pos for motor_name, pos in position.items()})
@@ -197,15 +220,15 @@ class DamiaoMotorsBus:
     
     def sync_write(
         self,
-        data_dict: dict[str, Value],
+        action: dict[str, Value],
         normalize: bool = True,
     ) -> None:
-        """Write the same register to several motors at once.
+        """Send desired position/velocity/torque commands (normalized by default) to the motors.
 
         Args:
-            data_dict (dict[str, Value]): Mapping *motor name → value*.
-            normalize (bool, optional): Normalisation flag.  Defaults to `True`.
-            num_retry (int, optional): Retry attempts.  Defaults to `0`.
+            action (dict[str, Value]): Mapping ``<motor>.<pos|vel|tor>`` to desired values.
+            normalize (bool, optional): If `True` (default) `.pos` entries are interpreted in the
+                configured :class:`MotorNormMode`, otherwise raw radians are expected.
         """
         if not self.is_connected:
             raise DeviceNotConnectedError(
@@ -213,20 +236,22 @@ class DamiaoMotorsBus:
             )
         
         targets = {}
-        for motor_name, motor in data_dict.items():
-            pos = data_dict[f"{motor_name}.pos"]
-            vel = data_dict.get(f"{motor_name}.vel")
-            tor = data_dict.get(f"{motor_name}.tor")
+        for motor_name, motor in self.motors.items():
+            pos = action[f"{motor_name}.pos"]
+            vel = action.get(f"{motor_name}.vel")
+            tor = action.get(f"{motor_name}.tor")
             targets[motor_name] = {"motor": motor, "pos": pos, "vel": vel, "tor": tor}
 
         if normalize:
+            if not self._has_calibration:
+                raise RuntimeError("Cannot normalize Damiao positions without calibration.")
             normalized_positions = {motor_name: target["pos"] for motor_name, target in targets.items()}
             normalized_positions = self.unnormalize_positions(normalized_positions)
             for motor_name, raw_value in normalized_positions.items():
                 targets[motor_name]["pos"] = raw_value
 
         if self.control_type == Control_Type.MIT:
-            for motor_name, motor in data_dict.items():
+            for motor_name, motor in action.items():
                 target = targets[motor_name]
                 pos = target["pos"]
                 vel = target.get("vel", 0.0) or 0.0
@@ -234,7 +259,7 @@ class DamiaoMotorsBus:
                 self.motorcontrol.controlMIT(DM_Motor=motor, kp=DEFAULT_KP, kd=DEFAULT_KD, q=pos, dq=vel, tau=0.0)
 
         elif self.control_type == Control_Type.POS_VEL:
-            for motor_name, motor in data_dict.items():
+            for motor_name, motor in action.items():
                 pos = targets[motor_name]["pos"]
                 self.motorcontrol.control_Pos_Vel(DM_Motor=motor, position=pos, velocity=DEFAULT_VELOCITY_LIMIT)
         
@@ -248,7 +273,20 @@ class DamiaoMotorsBus:
         display_values: bool = True,
         poll_interval_s: float = 0.05,
     ) -> tuple[dict[str, float], dict[str, float]]:
-        """Interactively record the min/max encoder values of each motor."""
+        """Interactively record the min/max encoder values of each motor.
+
+        Args:
+            motors (str | list[str] | None, optional): Selection of motors to monitor. `None`
+                uses all available motors.
+            display_values (bool, optional): If `True` prints a rolling table of min/pos/max
+                to the console. Defaults to `True`.
+            poll_interval_s (float, optional): Delay between successive reads when logging to
+                the console. Defaults to ``0.05`` seconds.
+
+        Returns:
+            tuple[dict[str, float], dict[str, float]]: Two dictionaries mapping *motor → min*
+            and *motor → max* across the recorded trajectory.
+        """
         selected_motors = self._select_motors(motors)
 
         if not selected_motors:
@@ -291,7 +329,7 @@ class DamiaoMotorsBus:
         """Return a deep copy of cached calibration entries."""
         return deepcopy(self.calibration)
 
-    def write_calibration(self, calibration_dict: dict[str, MotorCalibration], cache: bool = True) -> None:
+    def write_calibration(self, calibration_dict: dict[str, MotorCalibration],flash:bool=False, cache: bool = True) -> None:
         """Write calibration offsets to the motors and update cache."""
         unknown = set(calibration_dict) - set(self.motors)
         if unknown:
@@ -301,9 +339,12 @@ class DamiaoMotorsBus:
             success = self.motorcontrol.change_motor_param(motor, DM_variable.m_off, int(calibration.motor_offset))
             if not success:
                 raise RuntimeError(f"Failed to write motor offset for '{motor_name}'.")
-            self.motorcontrol.save_motor_param(motor)
+            
+            if flash:
+                self.motorcontrol.save_motor_param(motor)
         if cache:
             self.calibration = deepcopy(calibration_dict)
+            self._has_calibration = True
 
     def reset_calibration(self) -> None:
         """Clear cached calibration data and reset offsets on motors."""
@@ -311,12 +352,13 @@ class DamiaoMotorsBus:
             self.motorcontrol.change_motor_param(motor, DM_variable.m_off, 0)
             self.motorcontrol.save_motor_param(motor)
         self.calibration = {}
-    
+        self._has_calibration = False
+
     def normalize_positions(self, positions: dict[str, float]) -> dict[str, float]:
         """Convert raw radian positions into user-facing units based on MotorNormMode."""
         normalized = {}
         for motor_name, value in positions.items():
-            norm_mode = self._get_motor_norm_mode(motor_name)
+            norm_mode = self.motor_norm_mode
             min_, max_ = self._get_calibration_range(motor_name)
             if norm_mode is MotorNormMode.NONE:
                 normalized[motor_name] = self._clamp(value, min_, max_)
@@ -343,7 +385,7 @@ class DamiaoMotorsBus:
         """Convert normalized user units back into raw radians."""
         unnormalized = {}
         for motor_name, value in positions.items():
-            norm_mode = self._get_motor_norm_mode(motor_name)
+            norm_mode = self.motor_norm_mode
             min_, max_ = self._get_calibration_range(motor_name)
             if norm_mode is MotorNormMode.NONE:
                 unnormalized[motor_name] = self._clamp(value, min_, max_)
@@ -390,11 +432,6 @@ class DamiaoMotorsBus:
         self.motorcontrol.recv()
         return {motor_name: motor.getPosition() for motor_name, motor in motors.items()}
     
-    def _get_motor_norm_mode(self, motor_name: str) -> MotorNormMode:
-        if motor_name not in self.motor_norm_modes:
-            raise KeyError(f"No normalization mode configured for motor '{motor_name}'.")
-        return self.motor_norm_modes[motor_name]
-
     def _get_calibration_range(self, motor_name: str) -> tuple[float, float]:
         if motor_name not in self.calibration:
             raise RuntimeError(f"No calibration available for motor '{motor_name}'.")
