@@ -42,7 +42,7 @@ CleanK ロボット向けの LeRobot 拡張。ローカル `.venv` と `uv` で�
     --log_file=logs/cleank_teleoperate.log
   ```
   - Ctrl + C で停止
-  
+
 - 記録:  
   ```bash
   uv run cleank-record \
@@ -65,8 +65,8 @@ CleanK ロボット向けの LeRobot 拡張。ローカル `.venv` と `uv` で�
 
 ### 設定ファイルから実行する場合
 - 例の YAML を同梱:
-  - `config/teleop_example.yaml`
-  - `config/record_example.yaml`
+  - `configs/teleop_example.yaml`
+  - `configs/record_example.yaml`
 - 実行例:
   ```bash
   uv run cleank-teleoperate --config_path=config/teleop_example.yaml
