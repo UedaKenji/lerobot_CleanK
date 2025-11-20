@@ -1,0 +1,20 @@
+robot:
+  type: cleank-1-alpha_follower
+  port: /dev/ttyUSB0
+  id: follower
+  # cameras: {}  # デフォルトの RealSense 設定を消したいときだけ有効化
+
+teleop:
+  type: cleank_leader
+  port: /dev/ttyUSB1
+  id: leader
+
+dataset:
+  repo_id: yourname/cleank-demo
+  single_task: "Describe your task"
+  num_episodes: 2
+  fps: 30
+# root: ./data  #デフォルトは ~/.cache/huggingface/datasets/
+
+display_data: false
+log_file: logs/cleank_record.log

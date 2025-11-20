@@ -1,47 +1,82 @@
 # lerobot-cleank
 
-`lerobot` をベースに自前ロボットへ移植するための派生プロジェクトです。開発環境はこのリポジトリ直下に専用の `.venv` を作り、`pyproject.toml` で指定した git 依存 (`lerobot`) を `uv pip install -e .` で自動取得する方針に統一します。
+CleanK ロボット向けの LeRobot 拡張。ローカル `.venv` と `uv` で開発・実行します。
 
-## 事前準備
+## セットアップ
+- 前提: Python 3.10 / [uv](https://github.com/astral-sh/uv)
+- 初回:
+  ```bash
+  git clone <repo-url> lerobot_CleanK
+  cd lerobot_CleanK
+  uv venv .venv --python 3.10
+  source .venv/bin/activate
+  uv pip install -e .
+  ```
+- 以降の作業時は `source .venv/bin/activate` のみで OK。
 
-- Python 3.10
-- [uv](https://github.com/astral-sh/uv) をインストールし、`PATH` に通しておくこと
-- Git でこのリポジトリを clone できること
+## テスト
+- 通常（ハードウェア不要）:
+  ```bash
+  UV_CACHE_DIR=.uv_cache uv run pytest
+  ```
+- 実機接続の HIL テスト（オプション）:
+  ```bash
+  CLEANK_HIL=1 \
+  CLEANK_FOLLOWER_PORT=/dev/ttyUSB0 \
+  CLEANK_LEADER_PORT=/dev/ttyUSB1 \
+  UV_CACHE_DIR=.uv_cache uv run pytest test/test_cleank_hil.py -q
+  ```
+  ※カメラは無効化し、接続→1回観測/アクション取得のみ。
 
-## セットアップ手順（初回のみ）
+## 主要スクリプト
+- ポートが不明な場合は先にポート探索:  
+  ```bash
+  uv run lerobot-find-port
+  ```
+  で `ttyUSB*` などを確認してから下記を実行。
+- テレオペ:  
+  ```bash
+  uv run cleank-teleoperate \
+    --robot.type=cleank-1-alpha_follower --robot.port=<follower-port> --robot.id=follower \
+    --teleop.type=cleank_leader --teleop.port=<leader-port> --teleop.id=leader \
+    --log_file=logs/cleank_teleoperate.log
+  ```
+  - Ctrl + C で停止
+  
+- 記録:  
+  ```bash
+  uv run cleank-record \
+    --robot.type=cleank-1-alpha_follower --robot.port=<follower-port> --robot.id=follower \
+    --teleop.type=cleank_leader --teleop.port=<leader-port> --teleop.id=leader \
+    --dataset.repo_id=<user>/<dataset> --dataset.num_episodes=2 --dataset.single_task="Describe task" \
+    --log_file=logs/cleank_record.log
+  ```
+- リプレイ:  
+  ```bash
+  uv run lerobot-replay \
+    --robot.type=cleank-1-alpha_follower --robot.port=<follower-port> --robot.id=follower \
+    --dataset.repo_id=<user>/<dataset> --dataset.episode=0
+  ```
+- キャリブレーション:  
+  ```bash
+  uv run lerobot-calibrate --teleop.type=cleank_leader --teleop.port=<leader-port> --teleop.id=leader
+  ```
+- その他ユーティリティ: `lerobot-find-port`, `lerobot-find-cameras`, `lerobot-info`。
 
-1. リポジトリを取得:
-   ```bash
-   git clone <このリポジトリのURL> lerobot_CleanK
-   cd lerobot_CleanK
-   ```
-2. プロジェクト専用の仮想環境を作成:
-   ```bash
-   uv venv .venv --python 3.10
-   ```
-3. 仮想環境を有効化:
-   ```bash
-   source .venv/bin/activate
-   ```
-4. 依存関係をインストール:
-   ```bash
-   uv pip install -e .
-   ```
-   このコマンドで `pyproject.toml` に記載された `lerobot @ git+https://github.com/UedaKenji/lerobot.git@feature/CleanK`
-   が自動的に取得・インストールされます。
+### 設定ファイルから実行する場合
+- 例の YAML を同梱:
+  - `config/teleop_example.yaml`
+  - `config/record_example.yaml`
+- 実行例:
+  ```bash
+  uv run cleank-teleoperate --config_path=config/teleop_example.yaml
+  uv run cleank-record --config_path=config/record_example.yaml
+  ```
+- YAML に書いたキーはそのまま適用、書かないキーはデフォルトのまま（`cameras` を残したい場合はキー自体を書かない）。
 
-## 日常的な使い方
+## ログ
+- テレオペ/記録はデフォルトで `logs/cleank_teleoperate.log` / `logs/cleank_record.log` に出力（親ディレクトリは自動生成）。`--log_file` で上書き可能。
 
-- 作業前に必ず `source .venv/bin/activate` でローカル環境を有効化し、そのシェル上でスクリプト実行やテストを行う。
-- 依存が更新された場合は再度 `uv pip install -e .` を実行して同期する。
-- IDE やエディタの Python インタープリタ設定は `.venv/bin/python` を指すようにする。
-
-## lerobot 本体を直接編集したい場合（任意）
-
-- lerobot リポジトリを別途 clone し、同じ `.venv` 内で `uv pip install -e ../lerobot` を実行すると、CleanK と lerobot を同時に editable で触れます。
-- あるいは一時的に `[tool.uv.sources]` を手元の `pyproject.toml` に追加してローカルパスを参照する方法もありますが、チーム共有用のコミットには含めないでください。
-
-## コントリビュート指針
-
-- 追加の Python 依存は必ず `pyproject.toml` に追記し、チーム全体で同じ `uv pip install -e .` 手順で再現できるようにする。
-- 必要に応じて `uv pip freeze > requirements.lock` などでバージョンを固定し、再現性を向上させる。
+## 補足
+- `pyproject.toml` の `lerobot` 依存はローカル `../lerobot` を editable 参照しています。パスが異なる場合は適宜修正してください。
+-
