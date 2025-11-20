@@ -6,14 +6,13 @@ from dataclasses import dataclass
 from enum import Enum
 from pprint import pformat
 from copy import deepcopy
-from contextlib import contextmanager
 
 import logging
 import time
 import math
 from lerobot.utils.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 from lerobot.utils.utils import enter_pressed, move_cursor_up
-from .DM_CAN import Control_Type, DM_Motor_Type, MotorControl, Motor, DM_variable
+from .DM_CAN import Control_Type, MotorControl, Motor, DM_variable
 
 DEFAULT_BAUDRATE = 921600
 

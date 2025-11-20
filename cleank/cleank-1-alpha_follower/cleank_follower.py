@@ -22,7 +22,7 @@ from typing import Any
 from lerobot.cameras.utils import make_cameras_from_configs
 
 from ..damiao.DM_CAN import DM_Motor_Type, Motor
-from ..damiao.damiao import DamiaoMotorsBus, MotorCalibration, MotorNormMode
+from ..damiao.damiao import DamiaoMotorsBus, MotorCalibration
 
 from lerobot.utils.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 

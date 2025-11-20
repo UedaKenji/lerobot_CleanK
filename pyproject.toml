@@ -5,7 +5,6 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "ipykernel>=7.1.0",
     "keyboard>=0.13.5",
     "lerobot @ git+https://github.com/UedaKenji/lerobot.git@feature/CleanK",
     "numpy>=2.2.6",
@@ -16,3 +15,28 @@ dependencies = [
 
 [tool.uv.sources]
 lerobot = { path = "../lerobot", editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+    "ruff>=0.14.5",
+]
+
+
+[project.scripts]
+cleank-record  = "scripts.cleank_record:main"
+cleank-teleoperate = "scripts.cleank_teleoperate:main"
+lerobot-calibrate = "scripts.lerobot_calibrate:main"
+lerobot-find-port = "scripts.lerobot_find_port:main"
+lerobot-find-cameras = "scripts.lerobot_find_cameras:main"
+lerobot-info = "scripts.lerobot_info:main"
+
+[tool.ruff]
+exclude = [
+    "Untitled-1.ipynb",
+    "teleoperation*.py",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"cleank/**/__init__.py" = ["F401"]
+"test/test_cleank_hil.py" = ["E402"]

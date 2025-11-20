@@ -21,7 +21,7 @@ from typing import Any
 from lerobot.teleoperators import Teleoperator
 
 from ..damiao.DM_CAN import DM_Motor_Type, Motor
-from ..damiao.damiao import DamiaoMotorsBus, MotorCalibration, MotorNormMode
+from ..damiao.damiao import DamiaoMotorsBus, MotorCalibration
 from .config_cleank_leader import CleankLeaderConfig
 
 from lerobot.utils.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
