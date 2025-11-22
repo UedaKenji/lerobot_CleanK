@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pprint import pformat
 from copy import deepcopy
+from pathlib import Path
+import draccus
 
 import logging
 import time
@@ -36,7 +38,7 @@ class MotorNormMode(str, Enum):
 @dataclass
 class MotorCalibration:
     id: int
-    motor_offset: int
+    motor_offset: float
     range_min: float
     range_max: float
 
@@ -139,6 +141,8 @@ class DamiaoMotorsBus:
             yield
         finally:
             self.enable_torque(motors)
+
+    
     
     
     def reset_offset(self,
@@ -336,7 +340,8 @@ class DamiaoMotorsBus:
             raise KeyError(f"Unknown motors in calibration: {unknown}")
         for motor_name, calibration in calibration_dict.items():
             motor = self.motors[motor_name]
-            success = self.motorcontrol.change_motor_param(motor, DM_variable.m_off, int(calibration.motor_offset))
+            logging.debug(f"Writing motor offset {calibration.motor_offset} to motor '{motor_name}: {motor}")
+            success = self.motorcontrol.change_motor_param(motor, DM_variable.m_off, calibration.motor_offset)
             if not success:
                 raise RuntimeError(f"Failed to write motor offset for '{motor_name}'.")
             
@@ -345,6 +350,7 @@ class DamiaoMotorsBus:
         if cache:
             self.calibration = deepcopy(calibration_dict)
             self._has_calibration = True
+
 
     def reset_calibration(self) -> None:
         """Clear cached calibration data and reset offsets on motors."""

@@ -17,14 +17,17 @@
 import logging
 import time
 from typing import Any
+from pathlib import Path
+import draccus
 
 from lerobot.teleoperators import Teleoperator
+from lerobot.utils.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from lerobot.utils.constants import HF_LEROBOT_CALIBRATION, TELEOPERATORS
 
 from ..damiao.DM_CAN import DM_Motor_Type, Motor
 from ..damiao.damiao import DamiaoMotorsBus, MotorCalibration
 from .config_cleank_leader import CleankLeaderConfig
 
-from lerobot.utils.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +39,23 @@ class CleankLeader(Teleoperator):
     name = "cleank_leader"
 
     def __init__(self, config: CleankLeaderConfig):
-        super().__init__(config)
+        
+
+        # super().__init__(config)の代わりの初期化を行う
+        self.id = config.id
+        self.calibration_dir = (
+            config.calibration_dir
+            if config.calibration_dir
+            else HF_LEROBOT_CALIBRATION / TELEOPERATORS / self.name
+        )
+        self.calibration_dir.mkdir(parents=True, exist_ok=True)
+        self.calibration_fpath = self.calibration_dir / f"{self.id}.json"
+        self.calibration: dict[str, MotorCalibration] = {}
+        if self.calibration_fpath.is_file():
+            self._load_calibration()
+
+        #######################################################
+
         self.config = config
         self.bus = DamiaoMotorsBus(
             port=self.config.port,
@@ -87,7 +106,19 @@ class CleankLeader(Teleoperator):
 
     @property
     def is_calibrated(self) -> bool:
-        return self.bus.is_calibrated
+        return self.bus.is_calibrated        
+    
+    def _load_calibration(self, fpath: Path | None = None) -> None:
+        """
+        Helper to load calibration data from the specified file.
+
+        Args:
+            fpath (Path | None): Optional path to the calibration file. Defaults to `self.calibration_fpath`.
+        """
+        fpath = self.calibration_fpath if fpath is None else fpath
+        with open(fpath) as f, draccus.config_type("json"):
+            self.calibration = draccus.load(dict[str, MotorCalibration], f)
+
 
     def calibrate(self) -> None:
         """Interactively record offsets/ranges of motion and persist them."""
@@ -114,11 +145,12 @@ class CleankLeader(Teleoperator):
         self.calibration = {}
         for motor, m in self.bus.motors.items():
             self.calibration[motor] = MotorCalibration(
-                id=m.SlaveID,
-                motor_offset=homing_offsets[motor],
-                range_min=range_mins[motor],
-                range_max=range_maxes[motor],
+                id=int(m.SlaveID),
+                motor_offset=float(homing_offsets[motor]),
+                range_min=float(range_mins[motor]),
+                range_max=float(range_maxes[motor]),
             )
+
 
         self.bus.write_calibration(self.calibration)
         self._save_calibration()

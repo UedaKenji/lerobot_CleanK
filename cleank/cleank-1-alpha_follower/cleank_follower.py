@@ -18,8 +18,11 @@ import logging
 import time
 from functools import cached_property
 from typing import Any
+from pathlib import Path
+import draccus
 
 from lerobot.cameras.utils import make_cameras_from_configs
+from lerobot.utils.constants import HF_LEROBOT_CALIBRATION, TELEOPERATORS
 
 from ..damiao.DM_CAN import DM_Motor_Type, Motor
 from ..damiao.damiao import DamiaoMotorsBus, MotorCalibration
@@ -41,6 +44,19 @@ class CleankFollower(Robot):
 
     def __init__(self, config: CleankFollowerConfig):
         super().__init__(config)
+        
+        self.id = config.id
+        self.calibration_dir = (
+            config.calibration_dir
+            if config.calibration_dir
+            else HF_LEROBOT_CALIBRATION / TELEOPERATORS / self.name
+        )
+        self.calibration_dir.mkdir(parents=True, exist_ok=True)
+        self.calibration_fpath = self.calibration_dir / f"{self.id}.json"
+        self.calibration: dict[str, MotorCalibration] = {}
+        if self.calibration_fpath.is_file():
+            self._load_calibration()
+
         self.config = config
         motor_norm_mode = config.motor_norm_mode
         control_type = config.control_type
@@ -84,6 +100,17 @@ class CleankFollower(Robot):
     @cached_property
     def action_features(self) -> dict[str, type]:
         return self._motors_ft2
+    
+    def _load_calibration(self, fpath: Path | None = None) -> None:
+        """
+        Helper to load calibration data from the specified file.
+
+        Args:
+            fpath (Path | None): Optional path to the calibration file. Defaults to `self.calibration_fpath`.
+        """
+        fpath = self.calibration_fpath if fpath is None else fpath
+        with open(fpath) as f, draccus.config_type("json"):
+            self.calibration = draccus.load(dict[str, MotorCalibration], f)
 
     @property
     def is_connected(self) -> bool:
@@ -144,10 +171,10 @@ class CleankFollower(Robot):
         self.calibration = {}
         for motor, m in self.bus.motors.items():
             self.calibration[motor] = MotorCalibration(
-                id=m.SlaveID,
-                motor_offset=homing_offsets[motor],
-                range_min=range_mins[motor],
-                range_max=range_maxes[motor],
+                id=int(m.SlaveID),
+                motor_offset=float(homing_offsets[motor]),
+                range_min=float(range_mins[motor]),
+                range_max=float(range_maxes[motor]),
             )
 
         self.bus.write_calibration(self.calibration)
