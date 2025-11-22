@@ -23,8 +23,8 @@ allow-direct-references = true
 packages = ["cleank", "scripts"]
 
 
-[tool.uv.sources]
-  lerobot = { path = "../lerobot", editable = true }
+#[tool.uv.sources]
+#  lerobot = { path = "../lerobot", editable = true }
 
 [dependency-groups]
 dev = [
