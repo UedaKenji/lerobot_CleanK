@@ -1,2 +1,2 @@
-from .cleank_follower import CleanKFollower 
+from .cleank_follower import CleankFollower 
 from .config_cleank_follower import CleankFollowerConfig

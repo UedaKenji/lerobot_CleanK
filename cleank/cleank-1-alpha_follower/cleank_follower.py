@@ -33,11 +33,11 @@ from .config_cleank_follower import CleankFollowerConfig
 logger = logging.getLogger(__name__)
 
 
-class CleanKFollower(Robot):
+class CleankFollower(Robot):
     """Robot wrapper around the Damiao-powered CleanK follower arm."""
 
     config_class = CleankFollowerConfig
-    name = "clean_k_follower"
+    name = "cleank_follower"
 
     def __init__(self, config: CleankFollowerConfig):
         super().__init__(config)
