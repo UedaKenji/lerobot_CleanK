@@ -93,6 +93,7 @@ class DamiaoMotorsBus:
                 logger.warning(f"Failed to switch motor {motor} to {self.control_type} control mode: {e}")
 
 
+    @property
     def is_connected(self) -> bool:
         return self.motorcontrol.serial_.is_open
     
