@@ -41,13 +41,13 @@ class CleankFollowerConfig(RobotConfig):
 
     # cameras
     cameras: dict[str, CameraConfig] = field(
-        default_factory={
+        default_factory=lambda: {
             "cam_1": RealSenseCameraConfig(
                 serial_number_or_name="850312071789",
                 fps=30,
                 width=640,
                 height=480,
                 use_depth=False,
-            ),
+            )
         }
     )

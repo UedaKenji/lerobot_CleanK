@@ -13,8 +13,18 @@ dependencies = [
 ]
 
 
+[tool.uv]
+package = true
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["cleank", "scripts"]
+
+
 [tool.uv.sources]
-lerobot = { path = "../lerobot", editable = true }
+  lerobot = { path = "../lerobot", editable = true }
 
 [dependency-groups]
 dev = [
@@ -30,6 +40,10 @@ lerobot-calibrate = "scripts.lerobot_calibrate:main"
 lerobot-find-port = "scripts.lerobot_find_port:main"
 lerobot-find-cameras = "scripts.lerobot_find_cameras:main"
 lerobot-info = "scripts.lerobot_info:main"
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
 
 [tool.ruff]
 exclude = [
