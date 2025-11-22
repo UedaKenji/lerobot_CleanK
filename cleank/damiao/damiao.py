@@ -255,7 +255,7 @@ class DamiaoMotorsBus:
                 targets[motor_name]["pos"] = raw_value
 
         if self.control_type == Control_Type.MIT:
-            for motor_name, motor in action.items():
+            for motor_name, motor in self.motors.items():
                 target = targets[motor_name]
                 pos = target["pos"]
                 vel = target.get("vel", 0.0) or 0.0
@@ -263,7 +263,7 @@ class DamiaoMotorsBus:
                 self.motorcontrol.controlMIT(DM_Motor=motor, kp=DEFAULT_KP, kd=DEFAULT_KD, q=pos, dq=vel, tau=0.0)
 
         elif self.control_type == Control_Type.POS_VEL:
-            for motor_name, motor in action.items():
+            for motor_name, motor in self.motors.items():
                 pos = targets[motor_name]["pos"]
                 self.motorcontrol.control_Pos_Vel(DM_Motor=motor, position=pos, velocity=DEFAULT_VELOCITY_LIMIT)
         
