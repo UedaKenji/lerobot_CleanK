@@ -208,12 +208,16 @@ def teleoperate(cfg: TeleoperateConfig):
             robot_observation_processor=robot_observation_processor,
         )
     except KeyboardInterrupt:
+        logging.info("Teleoperation interrupted by user.")
         pass
     finally:
         if cfg.display_data:
             rr.rerun_shutdown()
         teleop.disconnect()
+        logging.info("Teleoperator disconnected.")
         robot.disconnect()
+        logging.info("Robot disconnected.")
+
 
 
 def main():
