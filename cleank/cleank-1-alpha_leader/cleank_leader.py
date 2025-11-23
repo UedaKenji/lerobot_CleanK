@@ -95,11 +95,25 @@ class CleankLeader(Teleoperator):
             raise DeviceAlreadyConnectedError(f"{self} already connected")
 
         self.bus.connect()
-        if not self.is_calibrated and calibrate:
-            logger.info(
-                "Mismatch between calibration values in the motor and the calibration file or no calibration file found"
-            )
-            self.calibrate()
+
+        requires_calibration = calibrate  # フラグが True なら絶対に対話モードへ
+        flash = False
+
+        if not requires_calibration:
+            if not self.calibration:
+                logger.info("キャリブレーションファイルなし，あるいはキーの不一致。")
+                requires_calibration = True
+            elif not self.bus.check_offset():
+                logger.warning("モータのオフセットとファイルが不一致。")
+                requires_calibration = True
+                flash = True
+            else:
+                logger.info("キャッシュ済みキャリブレーションがそのまま使えます。")
+
+        if requires_calibration:
+            self.calibrate(flash=flash)
+
+
 
         self.configure()
         logger.info(f"{self} connected.")
@@ -120,7 +134,7 @@ class CleankLeader(Teleoperator):
             self.calibration = draccus.load(dict[str, MotorCalibration], f)
 
 
-    def calibrate(self) -> None:
+    def calibrate(self, flash: bool = False) -> None:
         """Interactively record offsets/ranges of motion and persist them."""
         if self.calibration:
             user_input = input(
@@ -128,7 +142,7 @@ class CleankLeader(Teleoperator):
             )
             if user_input.strip().lower() != "c":
                 logger.info(f"Writing calibration file associated with the id {self.id} to the motors")
-                self.bus.write_calibration(self.calibration)
+                self.bus.write_calibration(self.calibration, flash=flash)
                 return
 
         logger.info(f"\nRunning calibration of {self}")
@@ -152,7 +166,7 @@ class CleankLeader(Teleoperator):
             )
 
 
-        self.bus.write_calibration(self.calibration)
+        self.bus.write_calibration(self.calibration, flash=flash)
         self._save_calibration()
         print("Calibration saved to", self.calibration_fpath)
 

@@ -116,34 +116,44 @@ class CleankFollower(Robot):
     def is_connected(self) -> bool:
         return self.bus.is_connected and all(cam.is_connected for cam in self.cameras.values())
 
-    def connect(self, calibrate: bool = True) -> None:
-        """Open the motor bus and cameras, optionally running calibration.
 
-        Args:
-            calibrate (bool, optional): When `True` (default) run the interactive calibration
-                helper if cached values do not match the motors.
-        """
+    def connect(self, calibrate: bool = True) -> None:
+        """Open the motor bus and optionally run calibration."""
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{self} already connected")
 
         self.bus.connect()
-        if not self.is_calibrated and calibrate:
-            logger.info(
-                "Mismatch between calibration values in the motor and the calibration file or no calibration file found"
-            )
-            self.calibrate()
+
+        requires_calibration = calibrate  # フラグが True なら絶対に対話モードへ
+        flash = False
+
+        if not requires_calibration:
+            if not self.calibration:
+                logger.info("キャリブレーションファイルなし，あるいはキーの不一致。")
+                requires_calibration = True
+            elif not self.bus.check_offset():
+                logger.warning("モータのオフセットとファイルが不一致。")
+                requires_calibration = True
+                flash = True
+            else:
+                logger.info("キャッシュ済みキャリブレーションがそのまま使えます。")
+
+        if requires_calibration:
+            self.calibrate(flash=flash)
 
         for cam in self.cameras.values():
             cam.connect()
 
+
         self.configure()
         logger.info(f"{self} connected.")
+
 
     @property
     def is_calibrated(self) -> bool:
         return self.bus.is_calibrated
 
-    def calibrate(self) -> None:
+    def calibrate(self, flash: bool = False) -> None:
         """Interactively record offsets/ranges of motion and persist them."""
         if self.calibration:
             # self.calibration is not empty here
@@ -152,7 +162,7 @@ class CleankFollower(Robot):
             )
             if user_input.strip().lower() != "c":
                 logger.info(f"Writing calibration file associated with the id {self.id} to the motors")
-                self.bus.write_calibration(self.calibration)
+                self.bus.write_calibration(self.calibration, flash=flash)
                 return
 
         logger.info(f"\nRunning calibration of {self}")
@@ -177,7 +187,7 @@ class CleankFollower(Robot):
                 range_max=float(range_maxes[motor]),
             )
 
-        self.bus.write_calibration(self.calibration)
+        self.bus.write_calibration(self.calibration, flash=flash)
         self._save_calibration()
         print("Calibration saved to", self.calibration_fpath)
 
@@ -222,6 +232,8 @@ class CleankFollower(Robot):
         """
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
+        
+        time_start = time.perf_counter()
 
         goal_positions = {key.removesuffix(".pos"): val for key, val in action.items() if key.endswith(".pos")}
 
@@ -240,6 +252,8 @@ class CleankFollower(Robot):
 
         # Send goal position to the arm
         self.bus.sync_write(command)
+        dt_ms = (time.perf_counter() - time_start) * 1e3
+        logger.debug(f"{self} sent action: {dt_ms:.1f}ms")
         return command
 
     def disconnect(self):

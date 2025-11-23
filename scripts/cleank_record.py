@@ -143,6 +143,8 @@ class RecordConfig:
     policy: PreTrainedConfig | None = None
     # Display all cameras on screen
     display_data: bool = False
+    # Force calibration dialog on connect
+    always_calibrate: bool = False
     # Use vocal synthesis to read events.
     play_sounds: bool = True
     # Resume recording on an existing dataset.
@@ -406,9 +408,9 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
             },
         )
 
-    robot.connect()
+    robot.connect(calibrate=cfg.always_calibrate)
     if teleop is not None:
-        teleop.connect()
+        teleop.connect(calibrate=cfg.always_calibrate)
 
     listener, events = init_keyboard_listener()
 

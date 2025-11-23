@@ -1,15 +1,16 @@
 teleop:
   type: cleank_leader
-  port: /dev/ttyUSB1
+  port: /dev/ttyACM0
   id: leader
 
 robot:
   type: cleank-1-alpha_follower
-  port: /dev/ttyUSB0
+  port: /dev/ttyACM1
   id: follower
   # cameras: {}  # デフォルトの RealSense 設定を消したいときだけ有効化
 
 fps: 60
 teleop_time_s: null
+always_calibrate: true
 display_data: false
 log_file: logs/cleank_teleoperate.log

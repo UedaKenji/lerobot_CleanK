@@ -100,6 +100,8 @@ class TeleoperateConfig:
     teleop_time_s: float | None = None
     # Display all cameras on screen
     display_data: bool = False
+    # Force calibration dialog on connect
+    always_calibrate: bool = False
     # Optional log file path for init_logging
     log_file: str | Path | None = "logs/cleank_teleoperate.log"
 
@@ -193,8 +195,8 @@ def teleoperate(cfg: TeleoperateConfig):
     robot = make_robot_from_config(cfg.robot)
     teleop_action_processor, robot_action_processor, robot_observation_processor = make_default_processors()
 
-    teleop.connect()
-    robot.connect()
+    teleop.connect(calibrate=cfg.always_calibrate)
+    robot.connect(calibrate=cfg.always_calibrate)
 
     try:
         teleop_loop(
@@ -214,9 +216,9 @@ def teleoperate(cfg: TeleoperateConfig):
         if cfg.display_data:
             rr.rerun_shutdown()
         teleop.disconnect()
-        logging.info("Teleoperator disconnected.")
+        #logging.info("Teleoperator disconnected.")
         robot.disconnect()
-        logging.info("Robot disconnected.")
+        #logging.info("Robot disconnected.")
 
 
 

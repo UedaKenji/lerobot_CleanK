@@ -143,29 +143,6 @@ class DamiaoMotorsBus:
             self.enable_torque(motors)
 
     
-    
-    
-    def reset_offset(self,
-        motors: str | list[str] | None = None
-    ) -> dict[str, int]:
-        """Reset the homing offset of several motors to zero and return the written offsets.
-
-        Args:
-            motors (str | list[str] | None, optional): Motors to reset. Defaults to all motors (`None`).
-        Returns:
-            dict[str, int]: Mapping *motor name → new offset*.
-        """
-        selected_motors = self._select_motors(motors)
-        offset = {}
-
-        for motor_name, motor in selected_motors.items():
-            self.motorcontrol.set_zero_position(motor)
-
-            time.sleep(0.05)  # small delay to ensure command is processed
-            offset[motor_name] = self.motorcontrol.read_motor_param(motor, RID=DM_variable.m_off)
-
-        return offset
-
 
             
 
@@ -270,6 +247,29 @@ class DamiaoMotorsBus:
         else:
             raise NotImplementedError(f"Control type {self.control_type} is not implemented in DamiaoMotorsBus.sync_write()")
         
+    
+    
+    def reset_offset(self,
+        motors: str | list[str] | None = None
+    ) -> dict[str, int]:
+        """Reset the homing offset of several motors to zero and return the written offsets.
+
+        Args:
+            motors (str | list[str] | None, optional): Motors to reset. Defaults to all motors (`None`).
+        Returns:
+            dict[str, int]: Mapping *motor name → new offset*.
+        """
+        selected_motors = self._select_motors(motors)
+        offset = {}
+
+        for motor_name, motor in selected_motors.items():
+            self.motorcontrol.set_zero_position(motor)
+
+            time.sleep(0.05)  # small delay to ensure command is processed
+            offset[motor_name] = self.motorcontrol.read_motor_param(motor, RID=DM_variable.m_off)
+
+        return offset
+
 
     def record_ranges_of_motion(
         self,
@@ -347,6 +347,7 @@ class DamiaoMotorsBus:
             
             if flash:
                 self.motorcontrol.save_motor_param(motor)
+                logging.debug(f"Flashed motor offset to motor '{motor_name}'.")
         if cache:
             self.calibration = deepcopy(calibration_dict)
             self._has_calibration = True
@@ -453,3 +454,22 @@ class DamiaoMotorsBus:
     def _clamp(value: float, min_: float, max_: float) -> float:
         return max(min_, min(max_, value))
         
+    def check_offset(self,motors: str | list[str] | None =None) -> bool:
+        
+        """Check if the selected motors have same offset as cached calibration."""
+
+        if not self._has_calibration:
+            return False
+        if not self.is_connected:
+            raise DeviceNotConnectedError(
+                f"{self.__class__.__name__}('{self.port}') is not connected. You need to run `{self.__class__.__name__}.connect()`."
+            )
+        selected_motors = self._select_motors(motors)
+        for motor_name, motor in selected_motors.items():
+            cached_offset = self.calibration.get(motor_name)
+            if not cached_offset:
+                return False
+            current_offset = self.motorcontrol.read_motor_param(motor, RID=DM_variable.m_off)
+            if abs(cached_offset.motor_offset - current_offset) > 1e-4:
+                return False
+        return True
