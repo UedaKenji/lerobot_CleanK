@@ -162,7 +162,8 @@ class CleankFollower(Robot):
             )
             if user_input.strip().lower() != "c":
                 logger.info(f"Writing calibration file associated with the id {self.id} to the motors")
-                self.bus.write_calibration(self.calibration, flash=flash)
+                with self.bus.torque_disabled():
+                    self.bus.write_calibration(self.calibration, flash=flash)
                 return
 
         logger.info(f"\nRunning calibration of {self}")
@@ -187,7 +188,8 @@ class CleankFollower(Robot):
                 range_max=float(range_maxes[motor]),
             )
 
-        self.bus.write_calibration(self.calibration, flash=flash)
+        with self.bus.torque_disabled():
+            self.bus.write_calibration(self.calibration, flash=flash)
         self._save_calibration()
         print("Calibration saved to", self.calibration_fpath)
 

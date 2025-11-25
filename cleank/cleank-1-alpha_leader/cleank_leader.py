@@ -142,7 +142,8 @@ class CleankLeader(Teleoperator):
             )
             if user_input.strip().lower() != "c":
                 logger.info(f"Writing calibration file associated with the id {self.id} to the motors")
-                self.bus.write_calibration(self.calibration, flash=flash)
+                with self.bus.torque_disabled():
+                    self.bus.write_calibration(self.calibration, flash=flash)
                 return
 
         logger.info(f"\nRunning calibration of {self}")
